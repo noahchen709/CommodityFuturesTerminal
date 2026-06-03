@@ -1,6 +1,12 @@
 from src.backtest.engine import run_walk_forward_backtest, summarize_backtest
+from src.data.curves import make_wti_contract_table
 from src.data.dataset import load_crude_research_dataset
-from src.features.crude_features import add_crude_features, feature_columns
+from src.features.crude_features import (
+    add_crude_features,
+    feature_columns,
+    monthly_seasonality,
+    seasonal_cumulative_profile,
+)
 from src.models.conformal import train_conformal_forecaster
 from src.reports.memo import generate_crude_memo
 
@@ -22,3 +28,20 @@ def test_crude_mvp_pipeline_runs() -> None:
 
     memo = generate_crude_memo(features.iloc[-1], forecast, metrics)
     assert "WTI setup" in memo
+
+
+def test_curve_and_seasonality_helpers_run() -> None:
+    features = add_crude_features(load_crude_research_dataset())
+
+    contracts = make_wti_contract_table(months=6)
+    assert len(contracts) == 6
+    assert {"symbol", "contract_month", "months_forward"}.issubset(contracts.columns)
+
+    monthly = monthly_seasonality(features)
+    assert len(monthly) == 12
+    assert {"avg_return", "positive_rate", "observations"}.issubset(monthly.columns)
+
+    seasonal = seasonal_cumulative_profile(features)
+    assert {"seasonal_avg", "seasonal_low", "seasonal_high", "current_year"}.issubset(
+        seasonal.columns
+    )

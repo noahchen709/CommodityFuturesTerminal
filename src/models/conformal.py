@@ -52,7 +52,7 @@ def train_conformal_forecaster(
     residuals = np.abs(calibration[target].to_numpy() - calibration_pred)
     q = float(np.quantile(residuals, 1 - alpha))
 
-    latest_x = model_df[features].iloc[[-1]]
+    latest_x = df.dropna(subset=features)[features].iloc[[-1]]
     point = float(model.predict(latest_x)[0])
     result = ForecastResult(
         point=point,

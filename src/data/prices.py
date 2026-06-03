@@ -23,5 +23,9 @@ def fetch_wti_yfinance(symbol: str = "CL=F", period: str = "7y") -> pd.DataFrame
     if data.empty:
         raise RuntimeError(f"No price data returned for {symbol}.")
 
-    weekly = data["Close"].resample("W-FRI").last().dropna()
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+
+    weekly = close.resample("W-FRI").last().dropna()
     return weekly.rename("settle").reset_index().rename(columns={"Date": "date"})

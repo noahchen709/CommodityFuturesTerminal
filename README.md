@@ -5,23 +5,34 @@ A research dashboard for commodity futures that focuses on risk ranges and trade
 The first milestone is a crude oil MVP:
 
 - weekly WTI price, inventory, positioning, and macro panel
+- current WTI futures curve with front-to-forward spreads
 - feature engineering for returns, volatility, drawdown, inventory surprise, positioning crowding, and seasonality
+- monthly and current-year seasonal return profiles
 - conformal prediction interval for next-week returns
 - walk-forward signal backtest
 - compact trading memo generator
 - Streamlit dashboard
 
-## Quick Start
+## Start
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python notebooks/01_crude_oil_mvp.py
 streamlit run app/dashboard.py
 ```
 
-The current MVP runs offline with generated sample data. Replace `load_crude_research_dataset()` with a processed CSV once live EIA, CFTC, and FRED ingestion is added.
+Open the Streamlit URL shown in the terminal, usually `http://localhost:8501`.
+
+The app uses real data by default. On first run, or when you click **Refresh live data**, it builds/updates `data/processed/crude_weekly.csv` from public sources. It does not use generated sample data for the dashboard.
+
+To refresh the real weekly panel from the command line:
+
+```bash
+python -c "from src.data.real import refresh_real_crude_weekly_dataset; refresh_real_crude_weekly_dataset()"
+```
+
+Live sources: Yahoo Finance WTI futures prices and curve contracts, EIA crude inventories, CFTC WTI managed-money positioning, and FRED broad dollar index. The joined weekly panel currently starts in 2006.
 
 ## Project Structure
 
@@ -38,8 +49,7 @@ tests/                           Smoke tests
 
 ## Next Milestones
 
-1. Add live WTI price ingestion through `yfinance`.
-2. Add EIA weekly crude inventory and production ingestion.
-3. Add CFTC disaggregated COT positioning for crude oil.
-4. Add FRED macro factors.
-5. Persist a weekly processed research panel to `data/processed/crude_weekly.csv`.
+1. Add production and refinery utilization to the weekly supply panel.
+2. Add contract roll diagnostics and term-structure features.
+3. Add source health checks and stale-data warnings in the dashboard.
+4. Add scheduled refresh automation for `data/processed/crude_weekly.csv`.

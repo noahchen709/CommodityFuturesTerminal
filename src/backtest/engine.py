@@ -12,7 +12,7 @@ def run_walk_forward_backtest(
     features: list[str],
     target: str = "target_return_1w",
     train_window: int = 156,
-    risk_threshold: float = 0.01,
+    risk_threshold: float = 0.25,
 ) -> pd.DataFrame:
     """Walk-forward backtest using forecasts scaled by recent volatility."""
     data = df.dropna(subset=features + [target]).reset_index(drop=True)
@@ -39,6 +39,7 @@ def run_walk_forward_backtest(
             {
                 "date": data["date"].iloc[idx],
                 "forecast": forecast,
+                "entry_threshold": risk_threshold * vol,
                 "signal": signal,
                 "realized_return": realized,
                 "strategy_return": signal * realized,
