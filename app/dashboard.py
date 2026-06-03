@@ -124,6 +124,19 @@ title_col.title("Commodity Futures Research Terminal")
 refresh = action_col.button("Refresh live data", width="stretch")
 st.caption("Crude oil MVP: supply-demand, positioning, volatility, conformal range, and trade memo.")
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stMetricValue"] {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: nowrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if refresh:
     load_dashboard_data.clear()
     load_curve_data.clear()
@@ -143,7 +156,7 @@ visible_features = filter_time_range(features, time_range)
 visible_bt = filter_time_range(bt, time_range)
 metrics = summarize_backtest(visible_bt if not visible_bt.empty else bt)
 
-metric_cols = st.columns(6)
+metric_cols = st.columns([1, 1, 1.75, 1, 1.35, 1.2], gap="large")
 metric_cols[0].metric("WTI settle", f"${latest['settle']:.2f}")
 metric_cols[1].metric("Forecast", f"{forecast.point:.2%}")
 metric_cols[2].metric("Range", f"{forecast.lower:.2%} to {forecast.upper:.2%}")
