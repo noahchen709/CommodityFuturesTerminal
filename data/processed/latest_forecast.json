@@ -5,5 +5,8 @@
   "interval_width": 0.15889996002924417,
   "alpha": 0.2,
   "residual_q": 0.07944998001462208,
-  "latest_data_date": "2026-05-29"
+  "latest_data_date": "2026-05-29",
+  "backtest_cache_version": 2,
+  "backtest_scope": "all_post_training",
+  "backtest_train_window": 156
 }

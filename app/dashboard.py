@@ -19,17 +19,17 @@ from src.reports.memo import generate_crude_memo
 
 
 BACKTEST_TRAIN_WINDOW = 156
-BACKTEST_DISPLAY_YEARS = 5
+BACKTEST_CACHE_VERSION = 2
 MODEL_OUTPUT_DIR = Path("data/processed")
 BACKTEST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "backtest_walk_forward.csv"
 FORECAST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "latest_forecast.json"
 
 TIME_RANGES = {
-    "1W": pd.DateOffset(weeks=1),
     "1M": pd.DateOffset(months=1),
     "3M": pd.DateOffset(months=3),
     "1Y": pd.DateOffset(years=1),
     "5Y": pd.DateOffset(years=5),
+    "10Y": pd.DateOffset(years=10),
     "All": None,
 }
 
@@ -118,12 +118,7 @@ def build_research_outputs(
 
     cols = crude_features.feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
-    backtest_start = features["date"].max() - pd.DateOffset(
-        weeks=BACKTEST_TRAIN_WINDOW,
-        years=BACKTEST_DISPLAY_YEARS,
-    )
-    backtest_features = features[features["date"] >= backtest_start].reset_index(drop=True)
-    bt = run_walk_forward_backtest(backtest_features, cols, train_window=BACKTEST_TRAIN_WINDOW)
+    bt = run_walk_forward_backtest(features, cols, train_window=BACKTEST_TRAIN_WINDOW)
     save_model_outputs(residual_q, forecast, bt, features["date"].max())
     return features, monthly, seasonal, residual_q, forecast, bt
 
@@ -134,6 +129,8 @@ def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame] | None:
 
     with FORECAST_OUTPUT_PATH.open() as handle:
         payload = json.load(handle)
+    if int(payload.get("backtest_cache_version", 0)) != BACKTEST_CACHE_VERSION:
+        return None
 
     forecast = ForecastResult(
         point=float(payload["point"]),
@@ -162,6 +159,9 @@ def save_model_outputs(
         "alpha": forecast.alpha,
         "residual_q": residual_q,
         "latest_data_date": latest_date.strftime("%Y-%m-%d"),
+        "backtest_cache_version": BACKTEST_CACHE_VERSION,
+        "backtest_scope": "all_post_training",
+        "backtest_train_window": BACKTEST_TRAIN_WINDOW,
     }
     FORECAST_OUTPUT_PATH.write_text(json.dumps(payload, indent=2))
 
@@ -443,8 +443,8 @@ with tab_backtest:
         st.info("No backtest rows available yet.")
     else:
         st.caption(
-            f"Backtest uses the latest {BACKTEST_DISPLAY_YEARS} years after a "
-            f"{BACKTEST_TRAIN_WINDOW}-week rolling training window."
+            f"Backtest rows start after the {BACKTEST_TRAIN_WINDOW}-week rolling "
+            "training warm-up; All excludes that warm-up period."
         )
         equity = (1 + visible_bt["strategy_return"]).cumprod()
         equity_fig = go.Figure()
