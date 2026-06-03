@@ -253,6 +253,7 @@ time_range = st.segmented_control(
     "Market window",
     list(TIME_RANGES),
     default="5Y",
+    required=True,
     label_visibility="collapsed",
 )
 visible_features = filter_time_range(features, time_range)
