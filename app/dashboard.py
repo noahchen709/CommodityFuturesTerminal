@@ -175,6 +175,27 @@ def filter_time_range(df: pd.DataFrame, label: str) -> pd.DataFrame:
     return df[df["date"] >= latest_date - offset].reset_index(drop=True)
 
 
+def build_backtest_summary(results: pd.DataFrame) -> dict[str, float | int | str]:
+    strategy = results["strategy_return"].fillna(0)
+    equity = (1 + strategy).cumprod()
+    active = results["signal"] != 0
+    active_returns = strategy[active]
+    winners = active_returns[active_returns > 0]
+    losers = active_returns[active_returns < 0]
+    years = max(len(results) / 52, 1 / 52)
+    final_equity = float(equity.iloc[-1])
+
+    return {
+        "long_weeks": int((results["signal"] > 0).sum()),
+        "short_weeks": int((results["signal"] < 0).sum()),
+        "exposure": float(active.mean()),
+        "avg_win": float(winners.mean()) if len(winners) else 0.0,
+        "avg_loss": float(losers.mean()) if len(losers) else 0.0,
+        "total_return": final_equity - 1,
+        "annual_return": final_equity ** (1 / years) - 1 if final_equity > 0 else -1.0,
+    }
+
+
 def style_time_series(
     fig: go.Figure,
     title: str,
@@ -449,6 +470,26 @@ with tab_backtest:
             f"Backtest rows start after the {BACKTEST_TRAIN_WINDOW}-week rolling "
             "training warm-up; All excludes that warm-up period."
         )
+        backtest_metrics = summarize_backtest(visible_bt)
+        backtest_summary = build_backtest_summary(visible_bt)
+        summary_cols = st.columns(4)
+        summary_cols[0].metric("Exposure", f"{backtest_summary['exposure']:.1%}")
+        summary_cols[1].metric(
+            "Long / Short weeks",
+            f"{backtest_summary['long_weeks']:,} / {backtest_summary['short_weeks']:,}",
+        )
+        summary_cols[2].metric("Hit rate", f"{backtest_metrics['hit_rate']:.1%}")
+        summary_cols[3].metric(
+            "Avg win / loss",
+            f"{backtest_summary['avg_win']:.1%} / {backtest_summary['avg_loss']:.1%}",
+        )
+
+        performance_cols = st.columns(4)
+        performance_cols[0].metric("Total return", f"{backtest_summary['total_return']:.1%}")
+        performance_cols[1].metric("Annual return", f"{backtest_summary['annual_return']:.1%}")
+        performance_cols[2].metric("Sharpe", f"{backtest_metrics['sharpe']:.2f}")
+        performance_cols[3].metric("Max drawdown", f"{backtest_metrics['max_drawdown']:.1%}")
+
         equity = (1 + visible_bt["strategy_return"]).cumprod()
         equity_fig = go.Figure()
         equity_fig.add_trace(
