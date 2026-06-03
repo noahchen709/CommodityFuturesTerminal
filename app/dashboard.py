@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -19,6 +20,9 @@ from src.reports.memo import generate_crude_memo
 
 BACKTEST_TRAIN_WINDOW = 156
 BACKTEST_DISPLAY_YEARS = 5
+MODEL_OUTPUT_DIR = Path("data/processed")
+BACKTEST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "backtest_walk_forward.csv"
+FORECAST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "latest_forecast.json"
 
 TIME_RANGES = {
     "1W": pd.DateOffset(weeks=1),
@@ -101,10 +105,17 @@ def build_seasonal_cumulative_profile(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def build_research_outputs(
     raw: pd.DataFrame,
+    recompute_models: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, float, ForecastResult, pd.DataFrame]:
     features = crude_features.add_crude_features(raw)
     monthly = build_monthly_seasonality(features)
     seasonal = build_seasonal_cumulative_profile(features)
+    if not recompute_models:
+        cached = load_model_outputs()
+        if cached is not None:
+            residual_q, forecast, bt = cached
+            return features, monthly, seasonal, residual_q, forecast, bt
+
     cols = crude_features.feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
     backtest_start = features["date"].max() - pd.DateOffset(
@@ -113,7 +124,46 @@ def build_research_outputs(
     )
     backtest_features = features[features["date"] >= backtest_start].reset_index(drop=True)
     bt = run_walk_forward_backtest(backtest_features, cols, train_window=BACKTEST_TRAIN_WINDOW)
+    save_model_outputs(residual_q, forecast, bt, features["date"].max())
     return features, monthly, seasonal, residual_q, forecast, bt
+
+
+def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame] | None:
+    if not BACKTEST_OUTPUT_PATH.exists() or not FORECAST_OUTPUT_PATH.exists():
+        return None
+
+    with FORECAST_OUTPUT_PATH.open() as handle:
+        payload = json.load(handle)
+
+    forecast = ForecastResult(
+        point=float(payload["point"]),
+        lower=float(payload["lower"]),
+        upper=float(payload["upper"]),
+        interval_width=float(payload["interval_width"]),
+        alpha=float(payload["alpha"]),
+    )
+    bt = pd.read_csv(BACKTEST_OUTPUT_PATH, parse_dates=["date"])
+    return float(payload["residual_q"]), forecast, bt
+
+
+def save_model_outputs(
+    residual_q: float,
+    forecast: ForecastResult,
+    bt: pd.DataFrame,
+    latest_date: pd.Timestamp,
+) -> None:
+    MODEL_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    bt.to_csv(BACKTEST_OUTPUT_PATH, index=False)
+    payload = {
+        "point": forecast.point,
+        "lower": forecast.lower,
+        "upper": forecast.upper,
+        "interval_width": forecast.interval_width,
+        "alpha": forecast.alpha,
+        "residual_q": residual_q,
+        "latest_data_date": latest_date.strftime("%Y-%m-%d"),
+    }
+    FORECAST_OUTPUT_PATH.write_text(json.dumps(payload, indent=2))
 
 
 def filter_time_range(df: pd.DataFrame, label: str) -> pd.DataFrame:
@@ -145,9 +195,10 @@ def style_time_series(
 
 st.set_page_config(page_title="Commodity Futures Research Terminal", layout="wide")
 
-title_col, action_col = st.columns([4, 1])
+title_col, refresh_col, model_col = st.columns([3.6, 1, 1.2])
 title_col.title("Commodity Futures Research Terminal")
-refresh = action_col.button("Refresh live data", width="stretch")
+refresh = refresh_col.button("Refresh live data", width="stretch")
+recompute_models = model_col.button("Run models", width="stretch")
 st.caption("Crude oil MVP: supply-demand, positioning, volatility, conformal range, and trade memo.")
 
 st.markdown(
@@ -166,10 +217,15 @@ st.markdown(
 if refresh:
     load_dashboard_data.clear()
     load_curve_data.clear()
+if refresh or recompute_models:
+    build_research_outputs.clear()
 
 raw = load_dashboard_data(refresh=refresh)
 curve_snapshot = load_curve_data(refresh=refresh)
-features, monthly, seasonal, residual_q, forecast, bt = build_research_outputs(raw)
+features, monthly, seasonal, residual_q, forecast, bt = build_research_outputs(
+    raw,
+    recompute_models=refresh or recompute_models,
+)
 latest = features.iloc[-1]
 
 time_range = st.segmented_control(
