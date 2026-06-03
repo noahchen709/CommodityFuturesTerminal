@@ -21,10 +21,14 @@ def test_crude_mvp_pipeline_runs() -> None:
 
     _, _, forecast = train_conformal_forecaster(features, cols)
     assert forecast.lower < forecast.point < forecast.upper
+    assert forecast.probability_up is not None
+    assert 0 <= forecast.probability_up <= 1
+    assert forecast.signal in {-1, 0, 1}
 
     backtest = run_walk_forward_backtest(features, cols)
     metrics = summarize_backtest(backtest)
     assert {"sharpe", "max_drawdown", "hit_rate", "turnover"}.issubset(metrics)
+    assert "probability_up" in backtest.columns
 
     memo = generate_crude_memo(features.iloc[-1], forecast, metrics)
     assert "WTI setup" in memo

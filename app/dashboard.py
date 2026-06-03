@@ -18,8 +18,9 @@ from src.models.conformal import ForecastResult, train_conformal_forecaster
 from src.reports.memo import generate_crude_memo
 
 
-BACKTEST_TRAIN_WINDOW = 156
-BACKTEST_CACHE_VERSION = 2
+BACKTEST_TRAIN_WINDOW = 260
+BACKTEST_CACHE_VERSION = 3
+PROBABILITY_THRESHOLD = 0.60
 MODEL_OUTPUT_DIR = Path("data/processed")
 BACKTEST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "backtest_walk_forward.csv"
 FORECAST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "latest_forecast.json"
@@ -118,7 +119,12 @@ def build_research_outputs(
 
     cols = crude_features.feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
-    bt = run_walk_forward_backtest(features, cols, train_window=BACKTEST_TRAIN_WINDOW)
+    bt = run_walk_forward_backtest(
+        features,
+        cols,
+        train_window=BACKTEST_TRAIN_WINDOW,
+        probability_threshold=PROBABILITY_THRESHOLD,
+    )
     save_model_outputs(residual_q, forecast, bt, features["date"].max())
     return features, monthly, seasonal, residual_q, forecast, bt
 
@@ -138,6 +144,10 @@ def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame] | None:
         upper=float(payload["upper"]),
         interval_width=float(payload["interval_width"]),
         alpha=float(payload["alpha"]),
+        probability_up=(
+            float(payload["probability_up"]) if "probability_up" in payload else None
+        ),
+        signal=int(payload.get("signal", 0)),
     )
     bt = pd.read_csv(BACKTEST_OUTPUT_PATH, parse_dates=["date"])
     return float(payload["residual_q"]), forecast, bt
@@ -157,11 +167,14 @@ def save_model_outputs(
         "upper": forecast.upper,
         "interval_width": forecast.interval_width,
         "alpha": forecast.alpha,
+        "probability_up": forecast.probability_up,
+        "signal": forecast.signal,
         "residual_q": residual_q,
         "latest_data_date": latest_date.strftime("%Y-%m-%d"),
         "backtest_cache_version": BACKTEST_CACHE_VERSION,
-        "backtest_scope": "all_post_training",
+        "backtest_scope": "all_post_training_directional_probability",
         "backtest_train_window": BACKTEST_TRAIN_WINDOW,
+        "probability_threshold": PROBABILITY_THRESHOLD,
     }
     FORECAST_OUTPUT_PATH.write_text(json.dumps(payload, indent=2))
 
@@ -262,7 +275,10 @@ metrics = summarize_backtest(visible_bt if not visible_bt.empty else bt)
 
 metric_cols = st.columns([1, 1, 1.75, 1, 1.35, 1.2], gap="large")
 metric_cols[0].metric("WTI settle", f"${latest['settle']:.2f}")
-metric_cols[1].metric("Forecast", f"{forecast.point:.2%}")
+metric_cols[1].metric(
+    "P(up)",
+    f"{forecast.probability_up:.1%}" if forecast.probability_up is not None else "n/a",
+)
 metric_cols[2].metric("Range", f"{forecast.lower:.2%} to {forecast.upper:.2%}")
 metric_cols[3].metric("Vol 8w", f"{latest['vol_8w']:.1%}")
 metric_cols[4].metric("6M curve spread", f"${curve_snapshot.six_month_spread:.2f}")
@@ -469,7 +485,9 @@ with tab_backtest:
     else:
         st.caption(
             f"Backtest rows start after the {BACKTEST_TRAIN_WINDOW}-week rolling "
-            "training warm-up; All excludes that warm-up period."
+            "training warm-up; All excludes that warm-up period. Signals use "
+            f"`P(up) > {PROBABILITY_THRESHOLD:.0%}` for longs and "
+            f"`P(up) < {1 - PROBABILITY_THRESHOLD:.0%}` for shorts."
         )
         backtest_metrics = summarize_backtest(visible_bt)
         backtest_summary = build_backtest_summary(visible_bt)

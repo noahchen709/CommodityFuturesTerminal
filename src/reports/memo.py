@@ -11,7 +11,15 @@ def generate_crude_memo(
     backtest_metrics: dict[str, float],
 ) -> str:
     """Generate a compact weekly crude oil trading memo."""
-    interval_bias = "constructive" if forecast.point > 0 else "defensive"
+    probability_up = forecast.probability_up
+    if probability_up is None:
+        interval_bias = "constructive" if forecast.point > 0 else "defensive"
+    elif forecast.signal > 0:
+        interval_bias = "constructive"
+    elif forecast.signal < 0:
+        interval_bias = "defensive"
+    else:
+        interval_bias = "neutral"
     crowding = latest["positioning_pct_156w"]
     inventory = latest["inventory_z_52w"]
 
@@ -29,9 +37,15 @@ def generate_crude_memo(
     else:
         inventory_view = "inventory changes are near normal"
 
+    probability_view = (
+        f"{probability_up:.1%}" if probability_up is not None else "not available"
+    )
+
     return (
         f"WTI setup for {latest['date'].date()}\n\n"
-        f"Model view: {interval_bias}. Expected next-week return is {forecast.point:.2%}, "
+        f"Model view: {interval_bias}. "
+        f"Directional probability of an up week is {probability_view}; "
+        f"expected next-week return is {forecast.point:.2%}, "
         f"with an {int((1 - forecast.alpha) * 100)}% conformal range of "
         f"{forecast.lower:.2%} to {forecast.upper:.2%}.\n\n"
         f"Supply-demand: {inventory_view}.\n"
