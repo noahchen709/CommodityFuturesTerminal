@@ -27,6 +27,7 @@ class CurveSnapshot:
     front_settle: float
     six_month_spread: float
     twelve_month_spread: float
+    source: str = "live"
 
 
 def fetch_wti_futures_curve(months: int = 18, lookback: str = "10d") -> CurveSnapshot:
@@ -69,6 +70,7 @@ def fetch_wti_futures_curve(months: int = 18, lookback: str = "10d") -> CurveSna
         front_settle=front,
         six_month_spread=six,
         twelve_month_spread=twelve,
+        source="live",
     )
 
 

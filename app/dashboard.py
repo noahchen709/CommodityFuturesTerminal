@@ -41,11 +41,10 @@ def load_dashboard_data(refresh: bool = False) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
 def load_curve_data(refresh: bool = False) -> CurveSnapshot:
-    if refresh:
-        try:
-            return fetch_wti_futures_curve()
-        except Exception:
-            pass
+    try:
+        return fetch_wti_futures_curve()
+    except Exception:
+        pass
     return build_cached_curve_snapshot(load_crude_research_dataset(source="csv"))
 
 
@@ -59,6 +58,7 @@ def build_cached_curve_snapshot(raw: pd.DataFrame, months: int = 18) -> CurveSna
         front_settle=float(latest["settle"]),
         six_month_spread=0.0,
         twelve_month_spread=0.0,
+        source="fallback",
     )
 
 
@@ -311,6 +311,9 @@ with tab_market:
 
 with tab_curve:
     curve = curve_snapshot.curve
+    if curve_snapshot.source == "fallback":
+        st.warning("Live futures curve unavailable; showing a flat proxy from the latest WTI settle.")
+
     curve_fig = go.Figure()
     curve_fig.add_trace(
         go.Scatter(
