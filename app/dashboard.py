@@ -231,7 +231,7 @@ latest = features.iloc[-1]
 time_range = st.segmented_control(
     "Market window",
     list(TIME_RANGES),
-    default="1Y",
+    default="5Y",
     label_visibility="collapsed",
 )
 visible_features = filter_time_range(features, time_range)
