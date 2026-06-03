@@ -18,6 +18,23 @@ class ForecastResult:
     alpha: float
 
 
+def make_forecaster_pipeline(n_estimators: int = 100) -> Pipeline:
+    """Create the return forecaster used by both live forecasts and backtests."""
+    return Pipeline(
+        [
+            ("scale", StandardScaler()),
+            (
+                "model",
+                RandomForestRegressor(
+                    n_estimators=n_estimators,
+                    min_samples_leaf=8,
+                    random_state=13,
+                ),
+            ),
+        ]
+    )
+
+
 def train_conformal_forecaster(
     df: pd.DataFrame,
     features: list[str],
@@ -33,19 +50,7 @@ def train_conformal_forecaster(
     train = model_df.iloc[:-calibration_size]
     calibration = model_df.iloc[-calibration_size:]
 
-    model = Pipeline(
-        [
-            ("scale", StandardScaler()),
-            (
-                "model",
-                RandomForestRegressor(
-                    n_estimators=300,
-                    min_samples_leaf=8,
-                    random_state=13,
-                ),
-            ),
-        ]
-    )
+    model = make_forecaster_pipeline()
     model.fit(train[features], train[target])
 
     calibration_pred = model.predict(calibration[features])

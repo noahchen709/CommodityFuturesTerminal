@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+
+from src.models.conformal import make_forecaster_pipeline
 
 
 def run_walk_forward_backtest(
@@ -14,7 +13,7 @@ def run_walk_forward_backtest(
     train_window: int = 156,
     risk_threshold: float = 0.25,
 ) -> pd.DataFrame:
-    """Walk-forward backtest using forecasts scaled by recent volatility."""
+    """Walk-forward backtest using the same forecaster as the live forecast."""
     data = df.dropna(subset=features + [target]).reset_index(drop=True)
     rows: list[dict[str, float | pd.Timestamp]] = []
 
@@ -22,7 +21,7 @@ def run_walk_forward_backtest(
         train = data.iloc[idx - train_window : idx]
         current = data.iloc[[idx]]
 
-        model = Pipeline([("scale", StandardScaler()), ("model", Ridge(alpha=10.0))])
+        model = make_forecaster_pipeline()
         model.fit(train[features], train[target])
         forecast = float(model.predict(current[features])[0])
         vol = max(float(current["vol_8w"].iloc[0] / np.sqrt(52)), 0.005)

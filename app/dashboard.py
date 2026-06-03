@@ -10,12 +10,15 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.backtest.engine import run_walk_forward_backtest, summarize_backtest
-from src.data.curves import CurveSnapshot, fetch_wti_futures_curve
+from src.data.curves import CurveSnapshot, fetch_wti_futures_curve, make_wti_contract_table
 from src.data.dataset import load_crude_research_dataset
 from src.features import crude_features
 from src.models.conformal import ForecastResult, train_conformal_forecaster
 from src.reports.memo import generate_crude_memo
 
+
+BACKTEST_TRAIN_WINDOW = 156
+BACKTEST_DISPLAY_YEARS = 5
 
 TIME_RANGES = {
     "1W": pd.DateOffset(weeks=1),
@@ -34,7 +37,25 @@ def load_dashboard_data(refresh: bool = False) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
 def load_curve_data(refresh: bool = False) -> CurveSnapshot:
-    return fetch_wti_futures_curve()
+    if refresh:
+        try:
+            return fetch_wti_futures_curve()
+        except Exception:
+            pass
+    return build_cached_curve_snapshot(load_crude_research_dataset(source="csv"))
+
+
+def build_cached_curve_snapshot(raw: pd.DataFrame, months: int = 18) -> CurveSnapshot:
+    latest = raw.sort_values("date").iloc[-1]
+    curve = make_wti_contract_table(months=months, as_of=pd.Timestamp(latest["date"]))
+    curve["settle"] = float(latest["settle"])
+    curve["date"] = pd.Timestamp(latest["date"])
+    return CurveSnapshot(
+        curve=curve,
+        front_settle=float(latest["settle"]),
+        six_month_spread=0.0,
+        twelve_month_spread=0.0,
+    )
 
 
 def build_monthly_seasonality(df: pd.DataFrame) -> pd.DataFrame:
@@ -86,7 +107,12 @@ def build_research_outputs(
     seasonal = build_seasonal_cumulative_profile(features)
     cols = crude_features.feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
-    bt = run_walk_forward_backtest(features, cols)
+    backtest_start = features["date"].max() - pd.DateOffset(
+        weeks=BACKTEST_TRAIN_WINDOW,
+        years=BACKTEST_DISPLAY_YEARS,
+    )
+    backtest_features = features[features["date"] >= backtest_start].reset_index(drop=True)
+    bt = run_walk_forward_backtest(backtest_features, cols, train_window=BACKTEST_TRAIN_WINDOW)
     return features, monthly, seasonal, residual_q, forecast, bt
 
 
@@ -360,6 +386,10 @@ with tab_backtest:
     if visible_bt.empty:
         st.info("No backtest rows available yet.")
     else:
+        st.caption(
+            f"Backtest uses the latest {BACKTEST_DISPLAY_YEARS} years after a "
+            f"{BACKTEST_TRAIN_WINDOW}-week rolling training window."
+        )
         equity = (1 + visible_bt["strategy_return"]).cumprod()
         equity_fig = go.Figure()
         equity_fig.add_trace(
