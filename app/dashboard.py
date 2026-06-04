@@ -13,7 +13,12 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.backtest.engine import run_walk_forward_backtest, summarize_backtest
 from src.data.curves import CurveSnapshot, fetch_wti_futures_curve, make_wti_contract_table
 from src.data.dataset import load_crude_research_dataset
-from src.features import crude_features
+from src.features.crude_features import (
+    add_crude_features,
+    feature_columns,
+    monthly_seasonality,
+    seasonal_cumulative_profile,
+)
 from src.models.conformal import ForecastResult, train_conformal_forecaster
 from src.reports.memo import generate_crude_memo
 
@@ -63,61 +68,21 @@ def build_cached_curve_snapshot(raw: pd.DataFrame, months: int = 18) -> CurveSna
     )
 
 
-def build_monthly_seasonality(df: pd.DataFrame) -> pd.DataFrame:
-    data = df.dropna(subset=["return_1w"]).copy()
-    grouped = data.groupby(data["date"].dt.month)["return_1w"]
-    return pd.DataFrame(
-        {
-            "month": range(1, 13),
-            "avg_return": grouped.mean().reindex(range(1, 13)).to_numpy(),
-            "positive_rate": grouped.apply(lambda x: (x > 0).mean()).reindex(range(1, 13)).to_numpy(),
-            "observations": grouped.count().reindex(range(1, 13)).fillna(0).astype(int).to_numpy(),
-        }
-    )
-
-
-def build_seasonal_cumulative_profile(df: pd.DataFrame) -> pd.DataFrame:
-    data = df.dropna(subset=["return_1w"]).copy()
-    data["year"] = data["date"].dt.year
-    data["week"] = data["date"].dt.isocalendar().week.astype(int)
-    data["cumulative_return"] = data.groupby("year")["return_1w"].transform(
-        lambda x: (1 + x).cumprod() - 1
-    )
-
-    latest_year = int(data["year"].max())
-    historical = data[data["year"] < latest_year]
-    current = data[data["year"] == latest_year][["week", "cumulative_return"]].rename(
-        columns={"cumulative_return": "current_year"}
-    )
-
-    bands = historical.groupby("week")["cumulative_return"].agg(
-        seasonal_avg="mean",
-        seasonal_low=lambda x: x.quantile(0.2),
-        seasonal_high=lambda x: x.quantile(0.8),
-    )
-    return (
-        bands.reset_index()
-        .merge(current, on="week", how="left")
-        .sort_values("week")
-        .reset_index(drop=True)
-    )
-
-
 @st.cache_data(show_spinner=False)
 def build_research_outputs(
     raw: pd.DataFrame,
     recompute_models: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, float, ForecastResult, pd.DataFrame]:
-    features = crude_features.add_crude_features(raw)
-    monthly = build_monthly_seasonality(features)
-    seasonal = build_seasonal_cumulative_profile(features)
+    features = add_crude_features(raw)
+    monthly = monthly_seasonality(features)
+    seasonal = seasonal_cumulative_profile(features)
     if not recompute_models:
         cached = load_model_outputs()
         if cached is not None:
             residual_q, forecast, bt = cached
             return features, monthly, seasonal, residual_q, forecast, bt
 
-    cols = crude_features.feature_columns()
+    cols = feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
     bt = run_walk_forward_backtest(
         features,
