@@ -30,7 +30,11 @@ class CurveSnapshot:
     source: str = "live"
 
 
-def fetch_wti_futures_curve(months: int = 18, lookback: str = "10d") -> CurveSnapshot:
+def fetch_wti_futures_curve(
+    months: int = 18,
+    lookback: str = "10d",
+    timeout: int = 8,
+) -> CurveSnapshot:
     """Fetch the current WTI futures curve from Yahoo Finance contract symbols."""
     import yfinance as yf
 
@@ -42,6 +46,7 @@ def fetch_wti_futures_curve(months: int = 18, lookback: str = "10d") -> CurveSna
         progress=False,
         group_by="ticker",
         threads=True,
+        timeout=timeout,
     )
     rows: list[dict[str, object]] = []
     for contract in contracts.itertuples(index=False):

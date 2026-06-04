@@ -251,14 +251,22 @@ st.markdown(
 if refresh:
     load_dashboard_data.clear()
     load_curve_data.clear()
-if refresh or recompute_models:
+if recompute_models:
     build_research_outputs.clear()
 
-raw = load_dashboard_data(refresh=refresh)
+try:
+    raw = load_dashboard_data(refresh=refresh)
+except Exception as exc:
+    if not refresh:
+        raise
+    st.warning(f"Live refresh failed, showing the cached dataset instead. ({exc})")
+    raw = load_dashboard_data(refresh=False)
+if refresh and raw.attrs.get("refresh_issues"):
+    st.warning("Partial live refresh: " + " ".join(raw.attrs["refresh_issues"]))
 curve_snapshot = load_curve_data(refresh=refresh)
 features, monthly, seasonal, residual_q, forecast, bt = build_research_outputs(
     raw,
-    recompute_models=refresh or recompute_models,
+    recompute_models=recompute_models,
 )
 latest = features.iloc[-1]
 
