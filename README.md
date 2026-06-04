@@ -1,6 +1,6 @@
 # Commodity Futures Research Terminal
 
-A research dashboard for commodity futures that focuses on risk ranges and trade setup quality instead of simple up/down price calls.
+A research terminal for commodity futures that focuses on professional data workflows, honest walk-forward validation, uncertainty-aware forecasting, and risk-managed trading research.
 
 The first milestone is a crude oil MVP:
 
@@ -39,6 +39,7 @@ Live sources: Yahoo Finance WTI futures prices and curve contracts, EIA crude in
 ```text
 app/dashboard.py                 Streamlit dashboard
 notebooks/01_crude_oil_mvp.py    Runnable crude MVP script
+ROADMAP.md                       Research, profitability roadmap
 src/data/                         Data loaders and sample data
 src/features/                     Weekly crude feature engineering
 src/models/                       Conformal forecast interval
@@ -49,7 +50,10 @@ tests/                           Smoke tests
 
 ## Next Milestones
 
-1. Add production and refinery utilization to the weekly supply panel.
-2. Add contract roll diagnostics and term-structure features.
-3. Add source health checks and stale-data warnings in the dashboard.
-4. Add scheduled refresh automation for `data/processed/crude_weekly.csv`.
+See [ROADMAP.md](ROADMAP.md) for the full research plan. The near-term priorities are:
+
+1. Add transaction costs, slippage, and cost-adjusted backtests.
+2. Add a model leaderboard with simple baselines, tuned linear models, calibrated classifiers, and tree-based alternatives.
+3. Add probability calibration and richer model diagnostics.
+4. Add futures curve, roll yield, and term-structure features.
+5. Add source health checks and stale-data warnings in the dashboard.
