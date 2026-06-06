@@ -10,7 +10,12 @@ import streamlit as st
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.backtest.engine import run_walk_forward_backtest, summarize_backtest
+from src.backtest.engine import (
+    run_model_leaderboard_backtest,
+    run_walk_forward_backtest,
+    summarize_backtest,
+    summarize_model_leaderboard,
+)
 from src.data.curves import CurveSnapshot, fetch_wti_futures_curve, make_wti_contract_table
 from src.data.dataset import load_crude_research_dataset
 from src.features.crude_features import (
@@ -24,10 +29,11 @@ from src.reports.memo import generate_crude_memo
 
 
 BACKTEST_TRAIN_WINDOW = 260
-BACKTEST_CACHE_VERSION = 3
+BACKTEST_CACHE_VERSION = 4
 PROBABILITY_THRESHOLD = 0.60
 MODEL_OUTPUT_DIR = Path("data/processed")
 BACKTEST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "backtest_walk_forward.csv"
+LEADERBOARD_OUTPUT_PATH = MODEL_OUTPUT_DIR / "model_leaderboard_walk_forward.csv"
 FORECAST_OUTPUT_PATH = MODEL_OUTPUT_DIR / "latest_forecast.json"
 
 TIME_RANGES = {
@@ -72,15 +78,23 @@ def build_cached_curve_snapshot(raw: pd.DataFrame, months: int = 18) -> CurveSna
 def build_research_outputs(
     raw: pd.DataFrame,
     recompute_models: bool = False,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, float, ForecastResult, pd.DataFrame]:
+) -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    float,
+    ForecastResult,
+    pd.DataFrame,
+    pd.DataFrame,
+]:
     features = add_crude_features(raw)
     monthly = monthly_seasonality(features)
     seasonal = seasonal_cumulative_profile(features)
     if not recompute_models:
         cached = load_model_outputs()
         if cached is not None:
-            residual_q, forecast, bt = cached
-            return features, monthly, seasonal, residual_q, forecast, bt
+            residual_q, forecast, bt, model_bt = cached
+            return features, monthly, seasonal, residual_q, forecast, bt, model_bt
 
     cols = feature_columns()
     _, residual_q, forecast = train_conformal_forecaster(features, cols)
@@ -90,12 +104,22 @@ def build_research_outputs(
         train_window=BACKTEST_TRAIN_WINDOW,
         probability_threshold=PROBABILITY_THRESHOLD,
     )
-    save_model_outputs(residual_q, forecast, bt, features["date"].max())
-    return features, monthly, seasonal, residual_q, forecast, bt
+    model_bt, _ = run_model_leaderboard_backtest(
+        features,
+        cols,
+        train_window=BACKTEST_TRAIN_WINDOW,
+        probability_threshold=PROBABILITY_THRESHOLD,
+    )
+    save_model_outputs(residual_q, forecast, bt, model_bt, features["date"].max())
+    return features, monthly, seasonal, residual_q, forecast, bt, model_bt
 
 
-def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame] | None:
-    if not BACKTEST_OUTPUT_PATH.exists() or not FORECAST_OUTPUT_PATH.exists():
+def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame, pd.DataFrame] | None:
+    if (
+        not BACKTEST_OUTPUT_PATH.exists()
+        or not LEADERBOARD_OUTPUT_PATH.exists()
+        or not FORECAST_OUTPUT_PATH.exists()
+    ):
         return None
 
     with FORECAST_OUTPUT_PATH.open() as handle:
@@ -115,17 +139,20 @@ def load_model_outputs() -> tuple[float, ForecastResult, pd.DataFrame] | None:
         signal=int(payload.get("signal", 0)),
     )
     bt = pd.read_csv(BACKTEST_OUTPUT_PATH, parse_dates=["date"])
-    return float(payload["residual_q"]), forecast, bt
+    model_bt = pd.read_csv(LEADERBOARD_OUTPUT_PATH, parse_dates=["date"])
+    return float(payload["residual_q"]), forecast, bt, model_bt
 
 
 def save_model_outputs(
     residual_q: float,
     forecast: ForecastResult,
     bt: pd.DataFrame,
+    model_bt: pd.DataFrame,
     latest_date: pd.Timestamp,
 ) -> None:
     MODEL_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     bt.to_csv(BACKTEST_OUTPUT_PATH, index=False)
+    model_bt.to_csv(LEADERBOARD_OUTPUT_PATH, index=False)
     payload = {
         "point": forecast.point,
         "lower": forecast.lower,
@@ -229,7 +256,7 @@ except Exception as exc:
 if refresh and raw.attrs.get("refresh_issues"):
     st.warning("Partial live refresh: " + " ".join(raw.attrs["refresh_issues"]))
 curve_snapshot = load_curve_data(refresh=refresh)
-features, monthly, seasonal, residual_q, forecast, bt = build_research_outputs(
+features, monthly, seasonal, residual_q, forecast, bt, model_bt = build_research_outputs(
     raw,
     recompute_models=recompute_models,
 )
@@ -244,6 +271,7 @@ time_range = st.segmented_control(
 )
 visible_features = filter_time_range(features, time_range)
 visible_bt = filter_time_range(bt, time_range)
+visible_model_bt = filter_time_range(model_bt, time_range)
 metrics = summarize_backtest(visible_bt if not visible_bt.empty else bt)
 
 metric_cols = st.columns([1, 1, 1.75, 1, 1.35, 1.2], gap="large")
@@ -262,8 +290,16 @@ st.caption(
     f"{len(visible_features):,} of {len(features):,} feature rows shown"
 )
 
-tab_market, tab_curve, tab_seasonality, tab_forecast, tab_backtest, tab_memo = st.tabs(
-    ["Market", "Futures Curve", "Seasonality", "Forecast Range", "Backtest", "Trading Memo"]
+tab_market, tab_curve, tab_seasonality, tab_forecast, tab_leaderboard, tab_backtest, tab_memo = st.tabs(
+    [
+        "Market",
+        "Futures Curve",
+        "Seasonality",
+        "Forecast Range",
+        "Model Leaderboard",
+        "Backtest",
+        "Trading Memo",
+    ]
 )
 
 with tab_market:
@@ -451,6 +487,55 @@ with tab_forecast:
     )
     st.plotly_chart(interval_fig, width="stretch")
     st.write(f"Calibration residual quantile: `{residual_q:.2%}`")
+
+with tab_leaderboard:
+    display_model_bt = visible_model_bt if not visible_model_bt.empty else model_bt
+    leaderboard = summarize_model_leaderboard(display_model_bt)
+    if leaderboard.empty:
+        st.info("No model leaderboard rows available yet.")
+    else:
+        st.caption(
+            f"Each model is refit walk-forward with a {BACKTEST_TRAIN_WINDOW}-week rolling "
+            "window. Classifier signals use the same probability threshold as the main "
+            "backtest; regression strategies trade the forecast sign."
+        )
+        top = leaderboard.iloc[0]
+        leader_cols = st.columns(4)
+        leader_cols[0].metric("Leader", str(top["model"]))
+        leader_cols[1].metric("Sharpe", f"{top['sharpe']:.2f}")
+        leader_cols[2].metric("Annual return", f"{top['annual_return']:.1%}")
+        leader_cols[3].metric("Max drawdown", f"{top['max_drawdown']:.1%}")
+
+        formatted = leaderboard.copy()
+        pct_cols = [
+            "directional_accuracy",
+            "total_return",
+            "annual_return",
+            "max_drawdown",
+            "hit_rate",
+            "exposure",
+            "turnover",
+        ]
+        for col in pct_cols:
+            formatted[col] = formatted[col].map(lambda value: f"{value:.1%}")
+        for col in ["rmse", "mae"]:
+            formatted[col] = formatted[col].map(lambda value: f"{value:.2%}")
+        formatted["sharpe"] = formatted["sharpe"].map(lambda value: f"{value:.2f}")
+        st.dataframe(formatted, width="stretch", hide_index=True)
+
+        equity_fig = go.Figure()
+        for model_name in leaderboard["model"].head(5):
+            model_rows = display_model_bt[display_model_bt["model"] == model_name]
+            equity_fig.add_trace(
+                go.Scatter(
+                    x=model_rows["date"],
+                    y=(1 + model_rows["strategy_return"]).cumprod(),
+                    name=str(model_name),
+                    hovertemplate="%{y:.2f}x<extra></extra>",
+                )
+            )
+        style_time_series(equity_fig, "Top Model Equity Curves", "Growth of $1", 420)
+        st.plotly_chart(equity_fig, width="stretch")
 
 with tab_backtest:
     if visible_bt.empty:

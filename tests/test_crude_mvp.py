@@ -1,4 +1,8 @@
-from src.backtest.engine import run_walk_forward_backtest, summarize_backtest
+from src.backtest.engine import (
+    run_model_leaderboard_backtest,
+    run_walk_forward_backtest,
+    summarize_backtest,
+)
 from src.data.curves import make_wti_contract_table
 from src.data.dataset import load_crude_research_dataset
 from src.features.crude_features import (
@@ -29,6 +33,32 @@ def test_crude_mvp_pipeline_runs() -> None:
     metrics = summarize_backtest(backtest)
     assert {"sharpe", "max_drawdown", "hit_rate", "turnover"}.issubset(metrics)
     assert "probability_up" in backtest.columns
+
+    model_bt, leaderboard = run_model_leaderboard_backtest(features, cols)
+    expected_models = {
+        "Zero-return",
+        "Historical mean",
+        "Ridge",
+        "Tuned Ridge",
+        "ElasticNet",
+        "Logistic regression",
+        "Calibrated logistic regression",
+        "Random forest",
+        "Gradient boosting",
+        "Rule: trend plus inventory",
+        "Rule: positioning contrarian",
+        "Rule: inventory reversion",
+    }
+    assert set(leaderboard["model"]) == expected_models
+    assert set(expected_models).issubset(model_bt["model"])
+    assert {
+        "rmse",
+        "mae",
+        "directional_accuracy",
+        "sharpe",
+        "max_drawdown",
+        "exposure",
+    }.issubset(leaderboard.columns)
 
     memo = generate_crude_memo(features.iloc[-1], forecast, metrics)
     assert "WTI setup" in memo

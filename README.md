@@ -10,6 +10,7 @@ The first milestone is a crude oil MVP:
 - monthly and current-year seasonal return profiles
 - conformal prediction interval for next-week returns
 - walk-forward signal backtest
+- model leaderboard for baselines, linear models, classifiers, tree models, and rule-based strategies
 - compact trading memo generator
 - Streamlit dashboard
 
@@ -53,7 +54,7 @@ tests/                           Smoke tests
 See [ROADMAP.md](ROADMAP.md) for the full research plan. The near-term priorities are:
 
 1. Add transaction costs, slippage, and cost-adjusted backtests.
-2. Add a model leaderboard with simple baselines, tuned linear models, calibrated classifiers, and tree-based alternatives.
-3. Add probability calibration and richer model diagnostics.
+2. Add transaction-cost-aware leaderboard rankings and richer model diagnostics.
+3. Add probability calibration diagnostics and reliability curves.
 4. Add futures curve, roll yield, and term-structure features.
 5. Add source health checks and stale-data warnings in the dashboard.

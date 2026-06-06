@@ -8,7 +8,7 @@
   "signal": 0,
   "residual_q": 0.08200753939680949,
   "latest_data_date": "2026-05-29",
-  "backtest_cache_version": 3,
+  "backtest_cache_version": 4,
   "backtest_scope": "all_post_training_directional_probability",
   "backtest_train_window": 260,
   "probability_threshold": 0.6
